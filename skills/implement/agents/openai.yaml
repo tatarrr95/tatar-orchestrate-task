@@ -1,0 +1,6 @@
+interface:
+  display_name: "Implement"
+  short_description: "Реализация работы по спецификации или тикетам"
+  default_prompt: "Use $implement to implement the supplied specification or tickets."
+policy:
+  allow_implicit_invocation: false

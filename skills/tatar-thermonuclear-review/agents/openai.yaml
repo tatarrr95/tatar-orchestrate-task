@@ -1,0 +1,6 @@
+interface:
+  display_name: "Tatar Thermonuclear Review"
+  short_description: "Финальный строгий аудит всей задачи"
+  default_prompt: "Use $tatar-thermonuclear-review to audit the complete parent-task diff for structural regressions."
+policy:
+  allow_implicit_invocation: false

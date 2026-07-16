@@ -1,0 +1,6 @@
+interface:
+  display_name: "Tatar Orchestrate Task"
+  short_description: "Оркестрация Linear-задачи до ревью"
+  default_prompt: "Use $tatar-orchestrate-task to implement Linear task ALT-45 through reviewed subtasks."
+policy:
+  allow_implicit_invocation: false

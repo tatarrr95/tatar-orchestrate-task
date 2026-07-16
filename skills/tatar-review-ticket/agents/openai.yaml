@@ -1,0 +1,6 @@
+interface:
+  display_name: "Tatar Review Ticket"
+  short_description: "Изолированная роль ревью Linear-тикета"
+  default_prompt: "Use $tatar-review-ticket to review the supplied Linear ticket diff in exactly one assigned reviewer role."
+policy:
+  allow_implicit_invocation: false
