@@ -5,7 +5,19 @@ description: Orchestrate a parent Linear task and all of its subtasks from imple
 
 # Tatar Orchestrate Task
 
-Drive one Linear parent issue from its current state to a reviewed implementation. Treat Linear as the task-state source of truth, use `$implement` for implementation, `$tatar-review-ticket` for independent review roles, and `$tatar-thermonuclear-review` for the final whole-task structural audit.
+Drive one Linear parent issue from its current state to a reviewed implementation. Treat Linear as the task-state source of truth, use `$implement` for implementation, `$tatar-review-ticket` for independent review roles, and `$tatar-thermonuclear-review` for structural audits: once per ticket right after implementation, and once for the whole task at the final gate.
+
+## Subagent Assignment
+
+Dispatch every subagent through the `task` tool with the agent fixed by phase:
+
+| Phase | Work | `agent` |
+| --- | --- | --- |
+| Phase 2, integration fixes, closure-mode fixes | implementation (`$implement`) | `task` |
+| Phase 3 | per-ticket review roles (`$tatar-review-ticket`) and per-ticket structural audit (`$tatar-thermonuclear-review`, scope kind `ticket`) | `reviewer` |
+| Phase 4 | whole-task final gate (`$tatar-review-ticket` parent scope, `$tatar-thermonuclear-review`) | `ft-reviewer` |
+
+Do not substitute other agents for these phases. If a required agent is not discoverable, stop before dispatch and report the blocker.
 
 Communicate with the user in Russian. Continue autonomously while safe in-scope work remains.
 
@@ -60,7 +72,7 @@ If the graph contains a cycle, missing child specification, or ambiguous ownersh
 
 ## Phase 2: Dispatch Implementers
 
-For each executable frontier, dispatch as many implementation agents as the runtime safely supports.
+For each executable frontier, dispatch as many implementation agents as the runtime safely supports. Each implementer is a `task` subagent (`agent: task`).
 
 Maintain an orchestration resource manifest containing each implementer or integration-fix worktree path, local branch name, ticket, and creation base SHA. Include resources created by subagents. This manifest defines the cleanup scope; discovering a branch by name pattern alone is not sufficient ownership evidence.
 
@@ -90,11 +102,24 @@ If an implementer fails, keep the ticket `In Progress`, preserve its work, inspe
 
 ## Phase 3: Review Each Ticket
 
-After an implementer commits, run three independent reviewer agents in parallel. Give them no other reviewers' findings. Each reviewer packet must contain exactly one role, and the agent must load only that role's reference from `$tatar-review-ticket`; never ask one reviewer to combine roles. Each must invoke `$tatar-review-ticket` with the exact ticket base/head range and one role:
+### Review Tier
+
+Before dispatching reviewers, assign the ticket exactly one review tier from its actual diff, not from its title, and record the tier with a one-line reason:
+
+- `light` — every changed file falls in docs, comments, dependency patch/minor bumps without code adaptation, CI/config hygiene, or test-only changes, **and** the non-test, non-generated diff is at most about 150 changed lines, **and** it touches none of: call flow or agent runtime, telephony/SIP, billing or tariffs, auth or multi-tenancy, database schema or migrations, secrets/env contracts, production infrastructure that will be applied.
+- `full` — everything else. When in doubt, choose `full`.
+
+A `light` ticket gets two reviewers (`requirements`, `correctness`), no ticket-scope thermonuclear audit, and at most one fix round. Promote it to `full` and run the missing roles when review or triage shows the change reaches any high-risk area above.
+
+### Reviewers
+
+After an implementer commits, run the tier's reviewer agents in parallel, each a `reviewer` subagent (`agent: reviewer`). A `full` ticket gets the four agents below; a `light` ticket gets only roles 1 and 2. Give them no other reviewers' findings. Each reviewer packet must contain exactly one role, and the agent must load only that role's reference from `$tatar-review-ticket`; never ask one reviewer to combine roles. Three invoke `$tatar-review-ticket` with the exact ticket base/head range and one role:
 
 1. `requirements` — child acceptance criteria, parent constraints, scope creep, and test evidence.
 2. `correctness` — logic, integration contracts, security, project invariants, and regressions.
 3. `edge-cases` — exhaustive branching, boundaries, races, timeouts, partial failures, and deletion regressions.
+
+The fourth invokes `$tatar-thermonuclear-review` with scope kind `ticket` on the same range: structural regressions and simplifications inside this ticket's change, with the parent as context. Running it here, before fixes accumulate on a bad shape, is deliberate: a structural rewrite after two correctness fix rounds re-opens those rounds. Treat its `structural_regression` findings as `fix_now` candidates in the same triage as the other roles, so the shape is settled before correctness fixes are layered on it.
 
 Collect their JSON arrays. Reviewer failure is not a clean review; retry once or report the incomplete layer.
 
@@ -110,6 +135,7 @@ For every finding:
    - `decision_needed`: correct behavior cannot be inferred from available requirements;
    - `deferred`: verified pre-existing out-of-scope defect with actionable impact;
    - `dismiss`: false positive, duplicate, speculative improvement, or sibling/future scope.
+5. Mark every `fix_now` finding `material` or `minor`. `material`: wrong behavior that a user, call, tenant, money, data, or security would observe, or an unmet acceptance criterion. `minor`: everything else — docs, comments, naming, log wording, test hardening of already-correct behavior, local simplification.
 
 Ask the user only for genuine `decision_needed` findings. Do not ask about unambiguous fixes.
 
@@ -119,11 +145,13 @@ Send one consolidated, evidence-backed `fix_now` list back to the original imple
 
 Apply this budget independently to each ticket gate in Phase 3 and to the whole-task gate in Phase 4:
 
-- Run one initial review, then allow at most two consolidated fix rounds. A fix round consists of one implementer pass over all accepted `fix_now` findings followed by re-review. Reviewer retries caused by tool or agent failure do not consume a fix round.
-- Re-run only affected review roles. Re-run all roles after a high-impact or cross-cutting fix, but require every re-review to focus on the fix delta, unresolved accepted findings, and regressions directly caused by that delta. Do not use re-review to start a fresh open-ended audit of unchanged code.
-- Triage genuinely new findings from a re-review normally, but accept them as `fix_now` only when they identify an unmet current requirement or a regression introduced or exposed by the current implementation or fix delta. Dismiss speculative improvements and defer only verified pre-existing out-of-scope defects under the existing deferred-work rules.
+- Run one initial review, then allow at most two consolidated fix rounds (one for a `light` ticket). A fix round consists of one implementer pass over all accepted `fix_now` findings followed by re-review. Reviewer retries caused by tool or agent failure do not consume a fix round.
+- Re-review only `material` fixes. When every finding in a fix round is `minor`, the orchestrator verifies the fix delta directly (diff read plus targeted tests) instead of dispatching reviewers, and that round does not reopen review.
+- Re-run only affected review roles: the roles whose findings were fixed, plus `correctness` when the fix changes behavior. Re-run all roles after a high-impact or cross-cutting fix, but require every re-review to focus on the fix delta, unresolved accepted findings, and regressions directly caused by that delta. Do not use re-review to start a fresh open-ended audit of unchanged code.
+- Triage genuinely new findings from a re-review normally, but accept them as `fix_now` only when they identify an unmet current requirement or a regression introduced or exposed by the current implementation or fix delta. In the second fix round, accept new findings only when they are `material`; record new `minor` findings in the report and do not fix them in this task. Dismiss speculative improvements and defer only verified pre-existing out-of-scope defects under the existing deferred-work rules.
 - Stop as soon as no accepted `fix_now` or `decision_needed` finding remains; unused rounds are not required.
-- After the second fix round, do not start another broad review or accept newly discovered improvements from unchanged code. Freeze the accepted finding set and enter closure mode: keep routing every unresolved `fix_now` to an implementer until it is fixed, and resolve every `decision_needed` through the user when necessary. Verify closure with targeted tests and a narrowly scoped check of the cited behavior and its fix delta; fix any regression directly caused by a closure-mode change. Closure checks must not reopen unrelated code or expand the finding set. Never defer or silently waive a current-task defect merely because the review budget is exhausted.
+- After the last allowed fix round (the second; the first for a `light` ticket), do not start another broad review or accept newly discovered improvements from unchanged code. Freeze the accepted finding set and enter closure mode: keep routing every unresolved `fix_now` to an implementer until it is fixed, and resolve every `decision_needed` through the user when necessary. Verify closure with targeted tests and a narrowly scoped check of the cited behavior and its fix delta; fix any regression directly caused by a closure-mode change. Closure checks must not reopen unrelated code or expand the finding set. Never defer or silently waive a current-task defect merely because the review budget is exhausted.
+- Patch-loop breaker: when a closure check finds that a closure fix itself introduced a new defect in the same behavior or code area for the second time, stop patching that area. Send the implementer one redesign pass for that area with the complete accumulated finding list for it, the failed attempts, and the instruction to restructure the logic (one owner of the state or transition, explicit cases) so that every listed finding is resolved together, with a test per finding. Verify the redesign with one targeted re-review of that area by the roles that raised its findings. Do not involve the user in this unless the redesign has to change behavior defined by the specification; that case is a `decision_needed`.
 
 ### Integrate and Advance State
 
@@ -158,15 +186,17 @@ Append compact entries with: source parent/ticket, evidence and location, impact
 
 ## Phase 4: Final Whole-Task Gate
 
-After every non-excluded child is `In Review` or `Done`, review the complete integrated range `parent_base_sha...HEAD` with three independent agents in parallel. Keep the two `$tatar-review-ticket` roles isolated in separate agents and packets:
+**Single-unit parent.** When the parent has exactly one implementation unit (no children, or one non-excluded child that carries the whole parent) and Phase 3 already reviewed exactly the range `parent_base_sha...HEAD` with the parent specification given to the `requirements` reviewer, do not dispatch the final reviewer agents: there are no cross-ticket contracts, and the same range already passed requirements, correctness, edge-case, and structural review. Run only the complete required verification below. If commits landed after the Phase 3 range (integration, rebase, closure fixes outside the reviewed delta), review only that extra delta under the normal rules.
+
+Otherwise, after every non-excluded child is `In Review` or `Done`, review the complete integrated range `parent_base_sha...HEAD` with three independent `ft-reviewer` subagents in parallel (`agent: ft-reviewer`). Keep the two `$tatar-review-ticket` roles isolated in separate agents and packets:
 
 1. `$tatar-review-ticket` with role `requirements` and scope kind `parent` — prove the parent specification is covered by the union of child implementations.
 2. `$tatar-review-ticket` with role `integration` and scope kind `parent` — find cross-ticket contract gaps, incompatible transitions, partial expand/contract states, and integration regressions.
-3. `$tatar-thermonuclear-review` — audit the whole task for structural regressions and high-value simplifications.
+3. `$tatar-thermonuclear-review` with scope kind `parent` — cross-ticket inconsistencies, structural regressions visible only in the integrated range, and high-value simplifications. Per-ticket shape was already audited in Phase 3; do not re-litigate findings dismissed there unless the integrated range changes the evidence.
 
-Triage these findings with the same rules. Route localized fixes to the best original implementer; route cross-ticket fixes to a dedicated integration implementer using `$implement`. Review every fix delta under the Review Convergence Budget; do not repeat final layers beyond its two fix rounds.
+Triage these findings with the same rules. Route localized fixes to the best original implementer; route cross-ticket fixes to a dedicated integration implementer (`agent: task`) using `$implement`. Review every fix delta under the Review Convergence Budget; do not repeat final layers beyond its two fix rounds.
 
-Run the complete required verification for every affected application and package. Run `pnpm migrations:check` when database artifacts are touched. Regenerate Graphify once at the end when preparing the task for review, as required by repository policy.
+Run the complete required verification for every affected application and package. Run `pnpm migrations:check` when database artifacts are touched.
 
 ## Phase 5: Cleanup Orchestration Worktrees and Branches
 
@@ -188,7 +218,7 @@ Move the parent to `In Review` only when:
 
 - every child is internally complete and in `In Review` or `Done`;
 - parent requirements coverage passes;
-- cross-ticket integration review passes;
+- cross-ticket integration review passes (not applicable to a single-unit parent);
 - all accepted thermonuclear structural regressions are fixed;
 - full required verification passes;
 - deferred work has been deduplicated and persisted;
@@ -203,7 +233,7 @@ Report in Russian:
 - child ticket status table;
 - implementation and review commit ranges;
 - accepted/fixed/dismissed/deferred finding counts;
-- review rounds used per ticket and for the whole-task gate, including findings resolved in closure mode;
+- review tier per ticket with its reason, and review rounds used per ticket and for the whole-task gate (or that the single-unit rule skipped it), including findings resolved in closure mode and any patch-loop redesign;
 - verification commands and results;
 - deferred ledger entries added or updated;
 - cleanup summary with removed worktrees/branches and any resources intentionally preserved;

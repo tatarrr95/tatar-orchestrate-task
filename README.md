@@ -7,7 +7,7 @@
 - `tatar-orchestrate-task` — основной оркестратор задачи и её подзадач.
 - `implement` — имплементор работы по спецификации или тикетам.
 - `tatar-review-ticket` — изолированные роли `requirements`, `correctness`, `edge-cases` и `integration`.
-- `tatar-thermonuclear-review` — финальный аудит архитектурной формы всего интегрированного изменения.
+- `tatar-thermonuclear-review` — структурный аудит: по каждому тикету сразу после реализации (`scope_kind: ticket`) и по всему интегрированному изменению на финальном гейте (`scope_kind: parent`).
 
 ## Установка
 
@@ -35,7 +35,7 @@ python3 "${CODEX_HOME:-$HOME/.codex}/skills/.system/skill-installer/scripts/inst
 
 - `tatar-orchestrate-task` вызывает `implement`, `tatar-review-ticket` и `tatar-thermonuclear-review`;
 - `tatar-review-ticket` использует собственные role references из своего каталога;
-- `tatar-thermonuclear-review` выполняет независимый финальный аудит;
+- `tatar-thermonuclear-review` выполняет независимый структурный аудит тикета и всей задачи;
 - `implement` выполняет изменения и коммитит их в назначенную ветку.
 
 Устанавливать только `tatar-orchestrate-task` без остальных трёх нельзя: перед изменением Linear он проверяет наличие обязательных reviewer- и implementer-скиллов.
@@ -62,13 +62,13 @@ Standalone-скилл `implement` ссылается на:
 - Linear API/connector с read/write-доступом к parent issue и descendants;
 - статусы команды Linear с точными именами `In Progress` и `In Review`;
 - runtime с поддержкой независимых subagents и параллельных reviewer agents;
+- субагенты с именами по фазам: `task` (реализация и фиксы), `reviewer` (ревью тикета), `ft-reviewer` (финальный гейт); без них оркестратор останавливается до dispatch;
 - Git с поддержкой branches, commits, cherry-pick/merge и linked worktrees;
 - доступ на запись к локальной файловой системе для создания временных worktrees;
 - проектные `AGENTS.md` и `_bmad-output/project-context.md`;
 - тестовые, lint, typecheck и migration-команды целевого проекта;
-- Graphify CLI и `graphify-out/`, если политика целевого репозитория требует финальную регенерацию графа.
 
-Оркестратор не поставляет Linear connector, subagent runtime, Git, Graphify или проектные toolchains — они должны быть доступны в среде Codex и целевом репозитории.
+Оркестратор не поставляет Linear connector, subagent runtime, Git или проектные toolchains — они должны быть доступны в среде Codex и целевом репозитории.
 
 ### GitHub-доступ для установки
 

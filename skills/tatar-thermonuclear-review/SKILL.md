@@ -1,28 +1,29 @@
 ---
 name: tatar-thermonuclear-review
-description: Perform the final independent, read-only structural audit of the complete integrated diff for a parent Linear task after all child tickets pass normal review. Use when tatar-orchestrate-task reaches its whole-task gate or when the user explicitly requests a thermonuclear maintainability review of an exact base/head range.
+description: Perform an independent, read-only structural audit of an exact base/head range for a Linear task. Use when tatar-orchestrate-task runs it per ticket right after implementation (scope kind ticket), at its whole-task gate (scope kind parent), or when the user explicitly requests a thermonuclear maintainability review of an exact range.
 ---
 
 # Tatar Thermonuclear Review
 
-Audit the architectural shape produced by the entire parent task. Be ambitious in proposed simplification, but never edit files, orchestrate fixes, update Linear, write deferred work, or decide the final merge verdict.
+Audit the architectural shape produced by the reviewed range. Be ambitious in proposed simplification, but never edit files, orchestrate fixes, update Linear, write deferred work, or decide the final merge verdict.
 
 ## Required Input
 
 Require:
 
-- parent Linear issue identifier and full specification;
-- child-ticket summaries and relevant implementation decisions;
-- exact immutable `base_sha` and `head_sha` covering the whole parent task;
+- `scope_kind`: `ticket` (one child's or single-unit parent's implementation range, audited right after it is committed) or `parent` (the complete integrated range at the whole-task gate);
+- parent Linear issue identifier and full specification; for `ticket` scope also the reviewed ticket identifier and body;
+- child-ticket summaries and relevant implementation decisions (for `parent` scope: all children; for `ticket` scope: this ticket plus already-integrated siblings);
+- exact immutable `base_sha` and `head_sha` for the scope;
 - changed-file list and diff stats;
 - repository standards sources, including `AGENTS.md` and `_bmad-output/project-context.md`.
 
-If the immutable range or parent context is missing, return one `review_incomplete` finding. Do not guess.
+If `scope_kind`, the immutable range, or parent context is missing, return one `review_incomplete` finding. Do not guess.
 
 ## Hard Boundaries
 
 - Remain read-only and do not spawn subagents.
-- Review the complete parent range, not an individual child patch.
+- Review the whole supplied scope. With `scope_kind=ticket`, audit the ticket's change as a unit (shape of new modules, functions, state, and seams) with the parent as context; do not report unimplemented sibling scope, and do not use `cross_ticket_inconsistency` unless an already-integrated sibling is in conflict. With `scope_kind=parent`, review the complete integrated range, not an individual child patch, and prioritise what is visible only across tickets.
 - Read full changed modules and their architectural neighbors; do not judge structure from hunks alone.
 - Focus on maintainability and structure. Leave ordinary acceptance, correctness, and edge-case review to `$tatar-review-ticket` unless a structural choice directly creates the defect.
 - Do not enforce a minimum finding count. `[]` is valid.
